@@ -28,7 +28,13 @@ from dbt.adapters.factory import (
     get_adapter_package_names,
     get_adapter_type_names,
 )
-from dbt.artifacts.resources import NodeConfig, NodeVersion, RefArgs, SourceConfig
+from dbt.artifacts.resources import (
+    NodeConfig,
+    NodeVersion,
+    RefArgs,
+    SeedConfig,
+    SourceConfig,
+)
 from dbt.clients.jinja import (
     MacroGenerator,
     MacroStack,
@@ -56,6 +62,7 @@ from dbt.contracts.graph.nodes import (
     Resource,
     SeedNode,
     SemanticModel,
+    SnapshotNode,
     SourceDefinition,
     UnitTestNode,
 )
@@ -237,25 +244,22 @@ class BaseResolver(metaclass=abc.ABCMeta):
 
     def resolve_event_time_filter(self, target: ManifestNode) -> Optional[EventTimeFilter]:
         event_time_filter = None
-        sample_mode = bool(
-            os.environ.get("DBT_EXPERIMENTAL_SAMPLE_MODE")
-            and getattr(self.config.args, "sample", False)
-            and getattr(self.config.args, "sample_window", None)
-        )
+        sample_mode = getattr(self.config.args, "sample", None) is not None
 
         # TODO The number of branches here is getting rough. We should consider ways to simplify
         # what is going on to make it easier to maintain
 
         # Only do event time filtering if the base node has the necessary event time configs
         if (
-            (isinstance(target.config, NodeConfig) or isinstance(target.config, SourceConfig))
+            isinstance(target.config, (NodeConfig, SeedConfig, SourceConfig))
             and target.config.event_time
-            and isinstance(self.model, ModelNode)
+            and isinstance(self.model, (ModelNode, SnapshotNode))
         ):
 
             # Handling of microbatch models
             if (
-                self.model.config.materialized == "incremental"
+                isinstance(self.model, ModelNode)
+                and self.model.config.materialized == "incremental"
                 and self.model.config.incremental_strategy == "microbatch"
                 and self.manifest.use_microbatch_batches(project_name=self.config.project_name)
                 and self.model.batch is not None
@@ -263,13 +267,13 @@ class BaseResolver(metaclass=abc.ABCMeta):
                 # Sample mode microbatch models
                 if sample_mode:
                     start = (
-                        self.config.args.sample_window.start
-                        if self.config.args.sample_window.start > self.model.batch.event_time_start
+                        self.config.args.sample.start
+                        if self.config.args.sample.start > self.model.batch.event_time_start
                         else self.model.batch.event_time_start
                     )
                     end = (
-                        self.config.args.sample_window.end
-                        if self.config.args.sample_window.end < self.model.batch.event_time_end
+                        self.config.args.sample.end
+                        if self.config.args.sample.end < self.model.batch.event_time_end
                         else self.model.batch.event_time_end
                     )
                     event_time_filter = EventTimeFilter(
@@ -290,8 +294,8 @@ class BaseResolver(metaclass=abc.ABCMeta):
             elif sample_mode:
                 event_time_filter = EventTimeFilter(
                     field_name=target.config.event_time,
-                    start=self.config.args.sample_window.start,
-                    end=self.config.args.sample_window.end,
+                    start=self.config.args.sample.start,
+                    end=self.config.args.sample.end,
                 )
 
         return event_time_filter

@@ -179,6 +179,7 @@ def cli(ctx, **kwargs):
 @p.project_dir
 @p.resource_type
 @p.exclude_resource_type
+@p.sample
 @p.select
 @p.selector
 @p.show
@@ -556,7 +557,6 @@ def parse(ctx, **kwargs):
 @p.event_time_start
 @p.event_time_end
 @p.sample
-@p.sample_window
 @p.select
 @p.selector
 @p.target_path
